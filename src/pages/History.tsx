@@ -12,6 +12,7 @@ import { locName } from '../lib/locations';
 import { fmtDateTime, fmtNum } from '../lib/util';
 import { DECIMAL_UNITS, UNITS, type CountRecord, type Unit } from '../types';
 import { go } from '../router';
+import { buildCsvString, formatDateTimeIso, triggerCsvDownload, formatDateYmd } from '../lib/csvManager';
 
 /** Screen 11: inventory history of a session, with filters, correction, void and restore. Nothing is ever deleted. */
 export default function History() {
@@ -30,6 +31,46 @@ export default function History() {
       .sort((a, b) => b.createdAt - a.createdAt);
   }, [data, filters, showVoided]);
   const locMap = new Map((data?.locations ?? []).map((l) => [l.id, l]));
+
+  const exportHistoryCsv = (recordsToExport: CountRecord[], label = 'filtered') => {
+    if (!data || !recordsToExport.length) return;
+    const headers = [
+      'Date',
+      'Movement Type',
+      'Product Name',
+      'Reference',
+      'Barcode',
+      'Zone',
+      'Shelf',
+      'Quantity',
+      'Unit',
+      'Status',
+    ];
+    const rows = recordsToExport.map((r) => {
+      const p = data.products.get(r.productId);
+      const l = locMap.get(r.locationId);
+      const status = r.voidedAt
+        ? r.supersededBy ? 'Corrigé' : 'Annulé'
+        : r.supersedes ? 'Correction' : 'Valide';
+      const typeStr = r.type === 'in' ? 'Stock IN (+)' : r.type === 'out' ? 'Stock OUT (−)' : r.type === 'opening' ? 'Opening Balance' : 'Count';
+      return [
+        formatDateTimeIso(r.createdAt),
+        typeStr,
+        p?.name ?? '—',
+        p?.reference ?? '',
+        p?.internalBarcode || p?.barcode || '',
+        l?.zone ?? '',
+        l?.shelf ?? '',
+        r.qty,
+        r.unit,
+        status,
+      ];
+    });
+
+    const csv = buildCsvString(headers, rows, ';', true);
+    triggerCsvDownload(`SMART_INVENTORY_HISTORY_${label.toUpperCase()}_${formatDateYmd()}.csv`, csv);
+    toast(settings.lang === 'ar' ? 'تم تصدير سجل الحركات CSV ✓' : 'Historique exporté en CSV ✓');
+  };
 
   const saveEdit = async () => {
     if (!edit) return;
@@ -72,10 +113,22 @@ export default function History() {
         ) : !data ? null : (
           <>
             <FilterBar locations={data.locations} value={filters} onChange={setFilters} />
-            <label className="flex min-h-12 items-center gap-3 text-sm text-white/70">
-              <input type="checkbox" className="h-5 w-5 accent-[#2f7bff]" checked={showVoided} onChange={(e) => setShowVoided(e.target.checked)} />
-              {t('history.showVoided')}
-            </label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="flex min-h-10 items-center gap-2 text-xs text-white/70">
+                <input type="checkbox" className="h-4 w-4 accent-[#2f7bff]" checked={showVoided} onChange={(e) => setShowVoided(e.target.checked)} />
+                {t('history.showVoided')}
+              </label>
+              <div className="flex gap-1.5">
+                <Btn onClick={() => exportHistoryCsv(list, 'filtered')} disabled={!list.length} className="!min-h-8 !px-2.5 text-xs">
+                  <Icon name="download" className="h-3.5 w-3.5" />
+                  {settings.lang === 'ar' ? `تصدير المفلتر (${list.length})` : `Export (${list.length})`}
+                </Btn>
+                <Btn onClick={() => exportHistoryCsv(data.records, 'all')} disabled={!data.records.length} className="!min-h-8 !px-2.5 text-xs">
+                  <Icon name="download" className="h-3.5 w-3.5" />
+                  {settings.lang === 'ar' ? 'تصدير الكل' : 'Tout exporter'}
+                </Btn>
+              </div>
+            </div>
             {list.length === 0 ? (
               <Empty icon="clock" title={t('history.empty')} />
             ) : (
@@ -98,9 +151,27 @@ export default function History() {
                             <p className="text-xs text-white/40">{fmtDateTime(r.createdAt, settings.lang)}</p>
                           </button>
                           <div className="shrink-0 text-end">
-                            <p className={`text-xl font-bold ${r.voidedAt ? 'line-through' : ''}`}>
-                              {fmtNum(r.qty)} <span className="text-sm font-normal text-white/50">{unitLabel(r.unit)}</span>
+                            <p className={`text-xl font-bold ${r.voidedAt ? 'line-through' : r.type === 'out' ? 'text-amber-400' : ''}`}>
+                              {r.type === 'out' ? `-${fmtNum(r.qty)}` : fmtNum(r.qty)} <span className="text-sm font-normal text-white/50">{unitLabel(r.unit)}</span>
                             </p>
+                            {r.type === 'out' && (
+                              <div className="mt-0.5">
+                                {r.docId ? (
+                                  <button
+                                    onClick={() => r.docId && go('/stock-out/' + r.docId)}
+                                    className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-amber-300 underline font-mono"
+                                  >
+                                    <Icon name="truck" className="h-3 w-3" />
+                                    {r.docNo || 'OUT'}
+                                  </button>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-amber-300">
+                                    <Icon name="truck" className="h-3 w-3" />
+                                    Stock OUT
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             {r.supersedes && !r.voidedAt && <Badge>{t('history.correction')}</Badge>}
                             {r.voidedAt && <Badge tone="mute">{r.supersededBy ? t('history.corrected') : t('history.voided')}</Badge>}
                           </div>

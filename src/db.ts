@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { CountRecord, Loc, MetaRow, PhotoRow, Product, Session } from './types';
+import type { CountRecord, Loc, MetaRow, PhotoRow, Product, Session, StockOutDocument } from './types';
 
 class AppDB extends Dexie {
   products!: Table<Product, string>;
@@ -8,6 +8,7 @@ class AppDB extends Dexie {
   records!: Table<CountRecord, string>;
   photos!: Table<PhotoRow, string>;
   meta!: Table<MetaRow, string>;
+  stockOuts!: Table<StockOutDocument, string>;
 
   constructor() {
     super('smart-inventory');
@@ -20,6 +21,13 @@ class AppDB extends Dexie {
       records: 'id, sessionId, locationId, productId, createdAt',
       photos: 'id',
       meta: 'key',
+    });
+    this.version(2).stores({
+      products: 'id, &refKey, &barcode, &internalBarcode, originalBarcode, *aliases, name, isTemp, mergedInto, updatedAt',
+    });
+    this.version(3).stores({
+      stockOuts: 'id, &docNo, status, warehouse, recipient, reason, date, createdAt',
+      records: 'id, sessionId, locationId, productId, docId, type, createdAt',
     });
   }
 }

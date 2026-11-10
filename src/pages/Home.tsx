@@ -11,6 +11,7 @@ import { fmtTotals, sumByUnit } from '../lib/records';
 import { locName } from '../lib/locations';
 import { fmtDateTime, fmtNum } from '../lib/util';
 import { go } from '../router';
+import { exportProductMasterCsv, exportDetailedStockCsv } from '../lib/csvManager';
 
 export default function Home() {
   const { t, unitLabel, settings, session, sessionId } = useApp();
@@ -21,6 +22,31 @@ export default function Home() {
     return { unique: prods.length, unknown: prods.filter((p) => p.isTemp).length, missing: prods.filter((p) => !p.reference).length };
   }, []);
   const lastBackup = useLiveQuery(() => getMeta<number | null>('lastBackup', null), []);
+
+  // Stock OUT quick stats and recent docs
+  const stockOutData = useLiveQuery(async () => {
+    const docs = await db.stockOuts.toArray();
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTodayMs = startOfToday.getTime();
+
+    let todayQty = 0;
+    let confirmedCount = 0;
+    let draftCount = 0;
+
+    for (const d of docs) {
+      if (d.status === 'confirmed') {
+        confirmedCount++;
+        const dateMs = d.confirmedAt ?? d.dateTime;
+        if (dateMs >= startOfTodayMs) todayQty += d.totalQuantity;
+      } else if (d.status === 'draft') {
+        draftCount++;
+      }
+    }
+
+    const recentDocs = [...docs].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3);
+    return { total: docs.length, confirmedCount, draftCount, todayQty, recentDocs };
+  }, []);
 
   const active = useMemo(() => (data ? filterRecords(data, filters).filter((r) => !r.voidedAt) : []), [data, filters]);
   const totals = sumByUnit(active);
@@ -53,6 +79,16 @@ export default function Home() {
               <Btn onClick={() => go('/sessions')}>{t('home.switchSession')}</Btn>
               <Btn onClick={() => go('/locations')}>
                 <Icon name="pin" className="h-5 w-5" /> {t('nav.locations')}
+              </Btn>
+            </div>
+            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-line">
+              <Btn onClick={() => exportProductMasterCsv()} className="!min-h-9 !px-2 text-xs">
+                <Icon name="download" className="h-3.5 w-3.5" />
+                {settings.lang === 'ar' ? 'تصدير الكتالوج CSV' : 'Export Catalogue CSV'}
+              </Btn>
+              <Btn onClick={() => exportDetailedStockCsv()} className="!min-h-9 !px-2 text-xs">
+                <Icon name="download" className="h-3.5 w-3.5" />
+                {settings.lang === 'ar' ? 'تصدير المخزون CSV' : 'Export Stock CSV'}
               </Btn>
             </div>
           </Card>
@@ -108,6 +144,72 @@ export default function Home() {
           <Stat label={t('stat.unknownProducts')} value={global?.unknown ?? '…'} tone={global?.unknown ? 'warn' : undefined} />
           <Stat label={t('stat.missingRef')} value={global?.missing ?? '…'} tone={global?.missing ? 'warn' : undefined} />
         </div>
+
+        {/* STOCK OUT CARD */}
+        <Card className="space-y-3 border-accent2/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/20 text-accent">
+                <Icon name="truck" className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm">
+                  {settings.lang === 'ar' ? 'حركات الصرف المخزني (Stock OUT)' : 'Sorties de Stock (Stock OUT)'}
+                </h3>
+                <p className="text-[11px] text-white/50">
+                  {settings.lang === 'ar'
+                    ? `اليوم: ${fmtNum(stockOutData?.todayQty ?? 0)} وحدة · ${stockOutData?.confirmedCount ?? 0} مؤكد`
+                    : `Aujourd'hui: ${fmtNum(stockOutData?.todayQty ?? 0)} unités · ${stockOutData?.confirmedCount ?? 0} confirmés`}
+                </p>
+              </div>
+            </div>
+            {stockOutData && stockOutData.draftCount > 0 && (
+              <Badge tone="warn">
+                {stockOutData.draftCount} {settings.lang === 'ar' ? 'مسودة' : 'brouillons'}
+              </Badge>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Btn variant="primary" onClick={() => go('/stock-out/new')} className="!min-h-10 text-xs">
+              <Icon name="plus" className="h-4 w-4" />
+              {t('stockOut.newStockOut')}
+            </Btn>
+            <Btn onClick={() => go('/stock-out')} className="!min-h-10 text-xs">
+              <Icon name="truck" className="h-4 w-4" />
+              {settings.lang === 'ar' ? 'لوحة الصرف' : 'Tableau de bord'}
+            </Btn>
+          </div>
+
+          {stockOutData && stockOutData.recentDocs.length > 0 && (
+            <div className="space-y-1.5 border-t border-line pt-2">
+              {stockOutData.recentDocs.map((doc) => (
+                <button
+                  key={doc.id}
+                  onClick={() => go(`/stock-out/${doc.id}`)}
+                  className="flex w-full items-center justify-between rounded-lg bg-panel2/40 px-2.5 py-1.5 text-xs text-start hover:bg-panel2 transition"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono font-bold text-accent2">{doc.docNo}</span>
+                    <span className="truncate text-white/70">{doc.recipient}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="font-mono font-semibold">{fmtNum(doc.totalQuantity)}</span>
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        doc.status === 'confirmed'
+                          ? 'bg-emerald-400'
+                          : doc.status === 'draft'
+                          ? 'bg-amber-400'
+                          : 'bg-red-400'
+                      }`}
+                    />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </Card>
 
         {session && (
           <div>

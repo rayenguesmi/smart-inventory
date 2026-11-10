@@ -1,6 +1,7 @@
 import { db } from '../db';
-import type { Product, Unit } from '../types';
+import type { BarcodeItem, Product, Unit } from '../types';
 import { norm, uid } from './util';
+import { nextInternalBarcodeInTx } from './barcodes';
 
 export type ErrorCode =
   | 'DUP_REF'
@@ -36,17 +37,19 @@ export const refKeyOf = (s?: string): string | undefined => {
 export interface ProductInput {
   reference?: string;
   barcode?: string;
+  originalBarcode?: string;
   name?: string;
   description?: string;
   category?: string;
   unit: Unit;
   cartonQty?: number | null;
+  minStock?: number | null;
   photoIds: string[];
 }
 
 function validate(inp: ProductInput, currentRef?: string) {
   const ref = norm(inp.reference);
-  const bc = norm(inp.barcode);
+  const bc = norm(inp.barcode || inp.originalBarcode);
   if (ref && (!REF_RE.test(ref) || (isTmpRef(ref) && ref.toUpperCase() !== (currentRef ?? '').toUpperCase()))) {
     throw new AppError('BAD_REF');
   }
@@ -62,7 +65,12 @@ async function byRef(ref: string): Promise<Product | undefined> {
   return (await db.products.where('refKey').equals(k).first()) ?? (await db.products.where('aliases').equals(k).first());
 }
 async function byBarcode(bc: string): Promise<Product | undefined> {
-  return (await db.products.where('barcode').equals(bc).first()) ?? (await db.products.where('aliases').equals(bc).first());
+  return (
+    (await db.products.where('barcode').equals(bc).first()) ??
+    (await db.products.where('internalBarcode').equals(bc).first()) ??
+    (await db.products.where('aliases').equals(bc).first()) ??
+    (await db.products.filter((p) => p.originalBarcode === bc || (p.barcodes ?? []).some((b) => b.code === bc && b.status === 'active')).first())
+  );
 }
 
 async function assertUnique(ref: string | undefined, bc: string | undefined, selfId?: string) {
@@ -97,27 +105,55 @@ export async function createProduct(inp: ProductInput): Promise<Product> {
   validate(inp);
   return db.transaction('rw', db.products, db.meta, async () => {
     let reference = norm(inp.reference) || undefined;
-    const barcode = norm(inp.barcode) || undefined;
-    await assertUnique(reference, barcode);
+    const originalBarcode = norm(inp.originalBarcode || inp.barcode) || undefined;
+    await assertUnique(reference, originalBarcode);
     let isTemp = false;
-    if (!reference && !barcode) {
+    if (!reference && !originalBarcode) {
       reference = await nextTmpRefInTx();
       isTemp = true;
     }
+
+    // Every product gets an automatic permanent internal Code 128 barcode identity
+    const internalBarcode = await nextInternalBarcodeInTx();
     const now = Date.now();
+    const barcodes: BarcodeItem[] = [
+      {
+        code: internalBarcode,
+        type: 'internal',
+        createdAt: now,
+        status: 'active',
+      },
+    ];
+    if (originalBarcode) {
+      barcodes.push({
+        code: originalBarcode,
+        type: 'original',
+        createdAt: now,
+        status: 'active',
+      });
+    }
+
+    const aliases = new Set<string>();
+    aliases.add(internalBarcode);
+    if (originalBarcode) aliases.add(originalBarcode);
+
     const p: Product = {
       id: uid(),
       reference,
       refKey: refKeyOf(reference),
-      barcode,
-      name: norm(inp.name) || reference || barcode || '—',
+      barcode: originalBarcode || internalBarcode,
+      originalBarcode,
+      internalBarcode,
+      barcodes,
+      minStock: inp.minStock != null ? inp.minStock : undefined,
+      name: norm(inp.name) || reference || originalBarcode || internalBarcode || '—',
       description: norm(inp.description) || undefined,
       category: norm(inp.category) || undefined,
       photoIds: inp.photoIds ?? [],
       unit: inp.unit,
       cartonQty: inp.cartonQty ?? undefined,
       isTemp,
-      aliases: [],
+      aliases: Array.from(aliases),
       createdAt: now,
       updatedAt: now,
     };
@@ -132,34 +168,60 @@ export async function updateProduct(id: string, inp: ProductInput): Promise<Prod
     if (!cur) throw new AppError('NOT_FOUND');
     validate(inp, cur.isTemp ? cur.reference : undefined);
     let reference = norm(inp.reference) || undefined;
-    const barcode = norm(inp.barcode) || undefined;
-    await assertUnique(reference, barcode, id);
+    const barcodeInput = norm(inp.barcode || inp.originalBarcode) || undefined;
 
-    let aliases = [...(cur.aliases ?? [])];
+    // Never generate a new internalBarcode if one already exists
+    const internalBarcode = cur.internalBarcode || (await nextInternalBarcodeInTx());
+
+    let originalBarcode = cur.originalBarcode;
+    if (barcodeInput && barcodeInput !== internalBarcode && barcodeInput !== cur.originalBarcode && barcodeInput !== cur.barcode) {
+      await assertUnique(reference, barcodeInput, id);
+      originalBarcode = barcodeInput;
+    } else {
+      await assertUnique(reference, undefined, id);
+    }
+
+    const aliases = new Set<string>(cur.aliases ?? []);
+    aliases.add(internalBarcode);
+    if (originalBarcode) aliases.add(originalBarcode);
+
     let isTemp: boolean;
-    if (!reference && !barcode) {
+    if (!reference && !originalBarcode) {
       // nothing identifies the product any more: keep/regenerate a temporary reference
       reference = cur.isTemp && cur.reference ? cur.reference : await nextTmpRefInTx();
       isTemp = true;
     } else {
-      isTemp = cur.isTemp && !barcode && reference?.toUpperCase() === cur.reference?.toUpperCase();
+      isTemp = cur.isTemp && !originalBarcode && reference?.toUpperCase() === cur.reference?.toUpperCase();
       if (cur.isTemp && !isTemp && cur.reference && cur.reference.toUpperCase() !== reference?.toUpperCase()) {
-        aliases = Array.from(new Set([...aliases, cur.reference.toUpperCase()]));
+        aliases.add(cur.reference.toUpperCase());
       }
     }
+
+    const barcodes = [...(cur.barcodes ?? [])];
+    if (!barcodes.some((b) => b.type === 'internal')) {
+      barcodes.unshift({ code: internalBarcode, type: 'internal', createdAt: cur.createdAt || Date.now(), status: 'active' });
+    }
+    if (originalBarcode && !barcodes.some((b) => b.code === originalBarcode)) {
+      barcodes.push({ code: originalBarcode, type: 'original', createdAt: Date.now(), status: 'active' });
+    }
+
     const next: Product = {
       ...cur,
       reference,
       refKey: refKeyOf(reference),
-      barcode,
-      name: norm(inp.name) || reference || barcode || cur.name,
+      barcode: originalBarcode || cur.barcode || internalBarcode,
+      originalBarcode,
+      internalBarcode,
+      barcodes,
+      minStock: inp.minStock !== undefined ? (inp.minStock != null ? inp.minStock : undefined) : cur.minStock,
+      name: norm(inp.name) || reference || originalBarcode || internalBarcode || cur.name,
       description: norm(inp.description) || undefined,
       category: norm(inp.category) || undefined,
       photoIds: inp.photoIds ?? cur.photoIds,
       unit: inp.unit,
       cartonQty: inp.cartonQty ?? undefined,
       isTemp,
-      aliases,
+      aliases: Array.from(aliases),
       updatedAt: Date.now(),
     };
     await db.products.put(next);
@@ -175,7 +237,7 @@ const codeVariants = (c: string): string[] => {
   return out;
 };
 
-/** Identify a scanned/typed code by barcode, reference or alias. Merged products are never returned. */
+/** Identify a scanned/typed code by barcode, internal barcode, original barcode, reference or alias. Merged products are never returned. */
 export async function findProductByCode(code: string): Promise<Product | undefined> {
   const c = norm(code);
   if (!c) return undefined;
@@ -183,8 +245,10 @@ export async function findProductByCode(code: string): Promise<Product | undefin
     const k = v.toUpperCase();
     const p =
       (await db.products.where('barcode').equals(v).first()) ??
+      (await db.products.where('internalBarcode').equals(v).first()) ??
       (await db.products.where('refKey').equals(k).first()) ??
-      (await db.products.where('aliases').anyOf([v, k]).first());
+      (await db.products.where('aliases').anyOf([v, k]).first()) ??
+      (await db.products.filter((prod) => !prod.mergedInto && (prod.originalBarcode === v || (prod.barcodes ?? []).some((b) => b.code === v && b.status === 'active'))).first());
     if (p && !p.mergedInto) return p;
   }
   return undefined;

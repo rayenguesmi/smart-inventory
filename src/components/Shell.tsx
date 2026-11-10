@@ -12,13 +12,13 @@ const TABS = [
 ];
 
 export function Shell({ title, back, right, children, noNav }: { title: string; back?: boolean | string; right?: ReactNode; children: ReactNode; noNav?: boolean }) {
-  const { t, online } = useApp();
+  const { t, online, settings, setSettings } = useApp();
   const { path } = useRoute();
-  const moreRoutes = ['/more', '/sessions', '/session', '/locations', '/unknown', '/reports', '/import', '/backup', '/settings'];
+  const moreRoutes = ['/more', '/stock-out', '/sessions', '/session', '/locations', '/unknown', '/reports', '/import', '/backup', '/settings', '/labels', '/csv'];
   const activeTab = (p: string) => (p === '/' ? path === '/' : p === '/more' ? moreRoutes.some((r) => path.startsWith(r)) : path.startsWith(p));
   return (
     <div className="flex h-full flex-col">
-      <header className="safe-top flex items-center gap-2 border-b border-line bg-panel px-3 pb-2">
+      <header className="safe-top flex items-center gap-2 border-b border-line bg-panel px-3 pb-2 print:hidden">
         {back && (
           <button
             onClick={() => (back === true ? goBack() : go(back))}
@@ -30,6 +30,14 @@ export function Shell({ title, back, right, children, noNav }: { title: string; 
         )}
         <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{title}</h1>
         {right}
+        <button
+          type="button"
+          onClick={() => setSettings({ lang: settings.lang === 'ar' ? 'fr' : 'ar' })}
+          className="flex shrink-0 items-center gap-1 rounded-full border border-line bg-panel2 px-2.5 py-1 text-xs font-semibold text-white/90 hover:border-accent hover:text-white transition active:scale-95"
+          title={settings.lang === 'ar' ? 'Passer en Français' : 'التحويل إلى العربية'}
+        >
+          {settings.lang === 'ar' ? 'FR' : 'عربي'}
+        </button>
         <span
           title={online ? t('online') : t('offline')}
           className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs ${online ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}
@@ -40,7 +48,7 @@ export function Shell({ title, back, right, children, noNav }: { title: string; 
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
       {!noNav && (
-        <nav className="safe-bottom grid grid-cols-5 border-t border-line bg-panel">
+        <nav className="safe-bottom grid grid-cols-5 border-t border-line bg-panel print:hidden">
           {TABS.map((tab) => {
             const on = activeTab(tab.path);
             return (

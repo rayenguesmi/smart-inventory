@@ -76,6 +76,24 @@ export default function Reports() {
           ))
         )}
 
+        <Card className="space-y-3 border-accent2/30 bg-accent2/5">
+          <div className="flex items-start gap-3">
+            <Icon name="database" className="mt-1 h-6 w-6 shrink-0 text-accent2" />
+            <div>
+              <p className="font-semibold">{settings.lang === 'ar' ? 'إدارة ملفات CSV المتقدمة' : 'Gestion avancée CSV & Excel'}</p>
+              <p className="text-sm text-white/50">{settings.lang === 'ar' ? 'تصدير شامل بـ 19 حقل، تفاصيل مواقع المخزون، واستيراد وتحديث آمن' : 'Export complet 19 colonnes, détail par emplacement, import & mise à jour'}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Btn variant="primary" onClick={() => go('/csv')}>
+              <Icon name="database" className="h-4 w-4" /> CSV Management
+            </Btn>
+            <Btn onClick={() => go('/labels')}>
+              <Icon name="barcode" className="h-4 w-4" /> {settings.lang === 'ar' ? 'ملصقات الباركود' : 'Étiquettes'}
+            </Btn>
+          </div>
+        </Card>
+
         <Card className="space-y-3">
           <div className="flex items-start gap-3">
             <Icon name="box" className="mt-1 h-6 w-6 shrink-0 text-accent2" />

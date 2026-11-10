@@ -4,6 +4,9 @@ import { Icon } from '../components/ui';
 import { go } from '../router';
 
 const ITEMS = [
+  { path: '/stock-out', icon: 'truck', key: 'stockOut.title' },
+  { path: '/labels', icon: 'barcode', key: 'nav.labels' },
+  { path: '/csv', icon: 'database', key: 'nav.csv' },
   { path: '/sessions', icon: 'layers', key: 'sessions' },
   { path: '/locations', icon: 'pin', key: 'nav.locations' },
   { path: '/unknown', icon: 'help', key: 'nav.unknown' },

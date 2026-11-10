@@ -5,15 +5,17 @@ import { useApp } from '../context';
 import { Shell, Page } from '../components/Shell';
 import { Badge, Btn, Empty, Icon, Input, Thumb } from '../components/ui';
 import { go } from '../router';
+import { exportProductMasterCsv } from '../lib/csvManager';
 import type { Product } from '../types';
 
 type Filter = 'all' | 'unknown' | 'noref';
 
 export default function Products() {
-  const { t, sessionId, locationId } = useApp();
+  const { t, settings, sessionId, locationId, toast } = useApp();
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [limit, setLimit] = useState(60);
+  const [exporting, setExporting] = useState(false);
   const dq = useDeferredValue(q);
   const all = useLiveQuery(async () => (await db.products.filter((p) => !p.mergedInto).toArray()).sort((a, b) => a.name.localeCompare(b.name)), []);
 
@@ -28,11 +30,38 @@ export default function Products() {
         p.name.toLowerCase().includes(s) ||
         (p.reference ?? '').toLowerCase().includes(s) ||
         (p.barcode ?? '').includes(s) ||
+        (p.internalBarcode ?? '').toLowerCase().includes(s) ||
+        (p.originalBarcode ?? '').toLowerCase().includes(s) ||
         (p.category ?? '').toLowerCase().includes(s) ||
         (p.aliases ?? []).some((a) => a.toLowerCase().includes(s))
       );
     });
   }, [all, dq, filter]);
+
+  const handleExportFiltered = async () => {
+    if (!list.length) return;
+    setExporting(true);
+    try {
+      await exportProductMasterCsv({ customProducts: list });
+      toast(settings.lang === 'ar' ? 'تم تصدير القائمة المفلترة ✓' : 'Liste filtrée exportée ✓');
+    } catch {
+      toast(t('err.export'), 'err');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportAll = async () => {
+    setExporting(true);
+    try {
+      await exportProductMasterCsv();
+      toast(settings.lang === 'ar' ? 'تم تصدير كل المنتجات ✓' : 'Tous les produits exportés ✓');
+    } catch {
+      toast(t('err.export'), 'err');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const row = (p: Product) => (
     <div key={p.id} className="card flex items-center gap-3 !p-2">
@@ -68,6 +97,26 @@ export default function Products() {
               {t('products.filter.' + f)}
             </button>
           ))}
+        </div>
+
+        {/* Quick Barcode & CSV Actions */}
+        <div className="flex flex-wrap gap-2 text-xs">
+          <Btn onClick={() => go('/labels')} className="!min-h-9 !px-3">
+            <Icon name="barcode" className="h-4 w-4" />
+            {settings.lang === 'ar' ? 'طباعة ملصقات' : 'Étiquettes'}
+          </Btn>
+          <Btn onClick={() => go('/csv')} className="!min-h-9 !px-3">
+            <Icon name="database" className="h-4 w-4" />
+            {settings.lang === 'ar' ? 'إدارة CSV' : 'Gestion CSV'}
+          </Btn>
+          <Btn onClick={handleExportFiltered} disabled={exporting || !list.length} className="!min-h-9 !px-3">
+            <Icon name="download" className="h-4 w-4" />
+            {settings.lang === 'ar' ? `تصدير المفلتر (${list.length})` : `Export (${list.length})`}
+          </Btn>
+          <Btn onClick={handleExportAll} disabled={exporting} className="!min-h-9 !px-3">
+            <Icon name="download" className="h-4 w-4" />
+            {settings.lang === 'ar' ? 'تصدير الكل' : 'Tout exporter'}
+          </Btn>
         </div>
         {!all ? null : list.length === 0 ? (
           <Empty icon="box" title={t('products.empty')} text={all.length ? undefined : t('products.emptyHelp')} action={!all.length ? <Btn variant="primary" onClick={() => go('/import')}>{t('nav.import')}</Btn> : undefined} />

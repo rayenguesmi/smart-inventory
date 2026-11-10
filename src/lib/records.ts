@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { DECIMAL_UNITS, type CountRecord, type Product, type Unit } from '../types';
+import { DECIMAL_UNITS, type CountRecord, type MovementType, type Product, type Unit } from '../types';
 import { fmtNum, uid } from './util';
 import { AppError } from './products';
 
@@ -18,9 +18,11 @@ export async function addRecord(p: {
   productId: string;
   qty: number;
   unit: Unit;
+  type?: MovementType;
+  note?: string;
 }): Promise<CountRecord> {
   const qty = validateQty(p.qty, p.unit);
-  const rec: CountRecord = { id: uid(), createdAt: Date.now(), ...p, qty };
+  const rec: CountRecord = { id: uid(), createdAt: Date.now(), type: p.type ?? 'count', ...p, qty };
   await db.records.add(rec);
   return rec;
 }
@@ -53,6 +55,8 @@ export async function correctRecord(id: string, qty: number, unit?: Unit): Promi
       productId: old.productId,
       qty: q,
       unit: u,
+      type: old.type ?? 'count',
+      note: old.note,
       createdAt: Date.now(),
       supersedes: old.id,
     };
@@ -77,12 +81,13 @@ export async function undoLast(sessionId: string): Promise<CountRecord | undefin
   });
 }
 
-/** Totals per unit. Units are never silently mixed. */
+/** Totals per unit. Out movements are subtracted, count/in/opening are added. */
 export function sumByUnit(records: CountRecord[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const r of records) {
     if (r.voidedAt) continue;
-    out[r.unit] = Math.round(((out[r.unit] ?? 0) + r.qty) * 1000) / 1000;
+    const delta = r.type === 'out' ? -r.qty : r.qty;
+    out[r.unit] = Math.round(((out[r.unit] ?? 0) + delta) * 1000) / 1000;
   }
   return out;
 }
@@ -96,4 +101,12 @@ export function fmtTotals(totals: Record<string, number>, unitLabel: (u: string)
 export function pieceEquivalent(product: Product | undefined, unit: Unit, qty: number): number | undefined {
   if (!product?.cartonQty || unit !== 'carton') return undefined;
   return qty * product.cartonQty;
+}
+
+/**
+ * Computes the total stock for a product across all locations/sessions.
+ */
+export async function getProductStock(productId: string): Promise<Record<string, number>> {
+  const recs = await db.records.where('productId').equals(productId).toArray();
+  return sumByUnit(recs);
 }

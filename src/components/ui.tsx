@@ -34,6 +34,13 @@ const ICONS: Record<string, string> = {
   wifioff: 'M1 1l22 22 M16.72 11.06A10.94 10.94 0 0 1 19 12.55 M5 12.55a10.94 10.94 0 0 1 5.17-2.39 M10.71 5.05A16 16 0 0 1 22.58 9 M1.42 9a15.91 15.91 0 0 1 4.7-2.88 M8.53 16.11a6 6 0 0 1 6.95 0 M12 20h.01',
   backspace: 'M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z M18 9l-6 6 M12 9l6 6',
   merge: 'M18 21V9a3 3 0 0 0-3-3H9 M6 3v12 M6 15a3 3 0 1 0 0 6a3 3 0 1 0 0-6z M18 6a3 3 0 1 0 0-6a3 3 0 1 0 0 6z',
+  barcode: 'M3 5v14 M6 5v14 M9 5v14 M12 5v14 M15 5v14 M18 5v14 M21 5v14',
+  printer: 'M6 9V2h12v7 M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2 M6 14h12v8H6z',
+  database: 'M12 2C6.5 2 2 3.8 2 6v12c0 2.2 4.5 4 10 4s10-1.8 10-4V6c0-2.2-4.5-4-10-4z M2 6c0 2.2 4.5 4 10 4s10-1.8 10-4 M2 12c0 2.2 4.5 4 10 4s10-1.8 10-4',
+  truck: 'M1 3h15v13H1z M16 8h4l3 3v5h-7V8z M5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z M18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  copy: 'M20 9h-9a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2z M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1',
+  share: 'M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8 M16 6l-4-4-4 4 M12 2v13',
+  arrowUpRight: 'M7 17L17 7 M7 7h10v10',
 };
 
 export function Icon({ name, className = 'h-6 w-6' }: { name: keyof typeof ICONS | string; className?: string }) {
@@ -70,8 +77,8 @@ export function Field({ label, hint, error, children }: { label: string; hint?: 
   );
 }
 
-export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`card ${className}`}>{children}</div>;
+export function Card({ children, className = '', onClick }: { children: ReactNode; className?: string; onClick?: () => void }) {
+  return <div onClick={onClick} className={`card ${className}`}>{children}</div>;
 }
 
 export function Empty({ icon = 'box', title, text, action }: { icon?: string; title: string; text?: string; action?: ReactNode }) {
@@ -143,7 +150,18 @@ export function Thumb({ photoId, className = 'h-14 w-14', onClick }: { photoId?:
   );
 }
 
-export function Badge({ children, tone = 'info' }: { children: ReactNode; tone?: 'info' | 'warn' | 'ok' | 'mute' }) {
-  const c = tone === 'warn' ? 'bg-amber-500/15 text-amber-300' : tone === 'ok' ? 'bg-emerald-500/15 text-emerald-300' : tone === 'mute' ? 'bg-white/10 text-white/50' : 'bg-accent/15 text-accent2';
+export function Badge({ children, tone = 'info' }: { children: ReactNode; tone?: 'info' | 'warn' | 'ok' | 'mute' | 'danger' }) {
+  const c =
+    tone === 'danger'
+      ? 'bg-red-500/15 text-red-300'
+      : tone === 'warn'
+      ? 'bg-amber-500/15 text-amber-300'
+      : tone === 'ok'
+      ? 'bg-emerald-500/15 text-emerald-300'
+      : tone === 'mute'
+      ? 'bg-white/10 text-white/50'
+      : 'bg-accent/15 text-accent2';
   return <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${c}`}>{children}</span>;
 }
+
+export const Modal = Sheet;

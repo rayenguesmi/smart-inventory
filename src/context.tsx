@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getMeta, setMeta } from './db';
 import { translate } from './i18n';
 import type { Loc, Session, Settings } from './types';
+import { ensureAllProductsHaveInternalBarcode } from './lib/barcodes';
 
 export const DEFAULT_SETTINGS: Settings = { lang: 'ar', continuous: true, cooldownMs: 2500, beep: true, vibrate: true };
 
@@ -68,6 +69,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSessionId(sid);
         setLocationId(lid);
         setReady(true);
+        ensureAllProductsHaveInternalBarcode().catch(console.error);
         // Ask the browser not to evict our IndexedDB data under storage pressure.
         navigator.storage?.persist?.().catch(() => undefined);
       } catch (e: any) {

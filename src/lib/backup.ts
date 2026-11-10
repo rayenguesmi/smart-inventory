@@ -175,7 +175,7 @@ export function validateBackup(text: string): Validation {
 /** Replaces ALL local data with the backup. The caller must have asked for confirmation. */
 export async function restoreBackup(b: BackupFile): Promise<void> {
   // Blob conversion is async-non-Dexie work, so it must happen before the transaction starts.
-  const photoRows = [];
+  const photoRows: { id: string; createdAt: number; demo?: boolean; blob: Blob }[] = [];
   for (const p of b.tables.photos) {
     if (p.dataUrl) photoRows.push({ id: p.id, createdAt: p.createdAt, demo: p.demo, blob: await dataUrlToBlob(p.dataUrl) });
   }

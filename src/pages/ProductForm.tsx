@@ -16,7 +16,7 @@ import { go, goBack, useRoute } from '../router';
 
 /** Screens 7 (product identification) and the edit form. Also the "unknown product" screen. */
 export default function ProductForm({ id }: { id?: string }) {
-  const { t, unitLabel, sessionId, locationId, toast } = useApp();
+  const { t, unitLabel, settings, sessionId, locationId, toast } = useApp();
   const { query } = useRoute();
   const editing = !!id;
   const existing = useLiveQuery(() => (id ? db.products.get(id) : undefined), [id]);
@@ -32,6 +32,7 @@ export default function ProductForm({ id }: { id?: string }) {
     category: '',
     unit: 'piece' as Unit,
     cartonQty: '',
+    minStock: '',
     qty: '',
     countUnit: 'piece' as Unit,
     locId: locationId ?? '',
@@ -47,12 +48,13 @@ export default function ProductForm({ id }: { id?: string }) {
     setF((s) => ({
       ...s,
       reference: existing.reference ?? '',
-      barcode: existing.barcode ?? '',
+      barcode: existing.originalBarcode ?? existing.barcode ?? '',
       name: existing.name,
       description: existing.description ?? '',
       category: existing.category ?? '',
       unit: existing.unit,
       cartonQty: existing.cartonQty ? String(existing.cartonQty) : '',
+      minStock: existing.minStock != null ? String(existing.minStock) : '',
     }));
     setPhotoIds(existing.photoIds);
   }
@@ -75,6 +77,8 @@ export default function ProductForm({ id }: { id?: string }) {
     setDupId(null);
     const cq = f.cartonQty.trim() ? Number(f.cartonQty) : null;
     if (cq !== null && (!Number.isInteger(cq) || cq < 1)) e.cartonQty = t('err.BAD_CARTON');
+    const minStk = f.minStock.trim() ? Number(f.minStock) : null;
+    if (minStk !== null && (!Number.isFinite(minStk) || minStk < 0)) e.minStock = t('err.BAD_QTY');
     const qtyNum = f.qty.trim() === '' ? null : Number(f.qty);
     if (qtyNum !== null && (!Number.isFinite(qtyNum) || qtyNum < 0 || (!decimalCount && !Number.isInteger(qtyNum)))) e.qty = t('err.BAD_QTY');
     if (qtyNum !== null && (!sessionId || !f.locId)) e.locId = t('scan.needLocation');
@@ -82,7 +86,18 @@ export default function ProductForm({ id }: { id?: string }) {
     setErr(e);
     if (Object.keys(e).length) return;
 
-    const input: ProductInput = { reference: f.reference, barcode: f.barcode, name: f.name, description: f.description, category: f.category, unit: f.unit, cartonQty: cq, photoIds };
+    const input: ProductInput = {
+      reference: f.reference,
+      barcode: f.barcode,
+      originalBarcode: f.barcode,
+      name: f.name,
+      description: f.description,
+      category: f.category,
+      unit: f.unit,
+      cartonQty: cq,
+      minStock: minStk,
+      photoIds,
+    };
     setSaving(true);
     try {
       if (editing && id) {
@@ -150,8 +165,14 @@ export default function ProductForm({ id }: { id?: string }) {
             {t('form.openExisting')}
           </Btn>
         )}
-        <Field label={t('barcode')} error={err.barcode}>
-          <Input value={f.barcode} onChange={(e) => set('barcode', e.target.value)} inputMode="text" />
+        {editing && existing?.internalBarcode && (
+          <div className="rounded-xl border border-line bg-panel2 p-3 text-xs">
+            <span className="text-white/50">{settings.lang === 'ar' ? 'الباركود الداخلي الدائم (Code 128):' : 'Code-barres interne permanent:'}</span>
+            <span className="ms-2 font-mono font-bold text-accent2">{existing.internalBarcode}</span>
+          </div>
+        )}
+        <Field label={settings.lang === 'ar' ? 'باركود المصنّع الأصلي' : 'Code-barres fabricant'} error={err.barcode} hint={editing ? (settings.lang === 'ar' ? 'تعديل هذا الحقل لن يؤثر على الباركود الداخلي' : 'Ne modifie pas le code interne') : undefined}>
+          <Input value={f.barcode} onChange={(e) => set('barcode', e.target.value)} inputMode="text" placeholder={editing ? '' : (settings.lang === 'ar' ? 'اتركه فارغًا لتوليد باركود تلقائي' : 'Laisser vide pour génération automatique')} />
         </Field>
         <Field label={t('product')} error={err.name}>
           <Input value={f.name} onChange={(e) => set('name', e.target.value)} />
@@ -159,9 +180,14 @@ export default function ProductForm({ id }: { id?: string }) {
         <Field label={t('description')}>
           <TextArea value={f.description} onChange={(e) => set('description', e.target.value)} />
         </Field>
-        <Field label={t('category')}>
-          <Input value={f.category} onChange={(e) => set('category', e.target.value)} />
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t('category')}>
+            <Input value={f.category} onChange={(e) => set('category', e.target.value)} />
+          </Field>
+          <Field label={settings.lang === 'ar' ? 'تنبيه الحد الأدنى للمخزون' : 'Alerte stock minimum'} error={err.minStock}>
+            <Input inputMode="numeric" value={f.minStock} onChange={(e) => set('minStock', e.target.value)} placeholder="0" />
+          </Field>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label={t('form.defaultUnit')}>
             <Select value={f.unit} onChange={(e) => set('unit', e.target.value)}>

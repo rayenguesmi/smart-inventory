@@ -7,10 +7,11 @@ import { addLocation, addShelvesBulk, deleteLocationIfEmpty, renameShelf, rename
 import { go } from '../router';
 import { db } from '../db';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { buildCsvString, triggerCsvDownload, formatDateYmd } from '../lib/csvManager';
 import type { Loc } from '../types';
 
 export default function Locations() {
-  const { t, sessionId, locationId, selectLocation, toast, confirm } = useApp();
+  const { t, settings, sessionId, locationId, selectLocation, toast, confirm } = useApp();
   const locs = useLocations(sessionId);
   const counts = useLiveQuery(async () => {
     if (!sessionId) return new Map<string, number>();
@@ -40,6 +41,20 @@ export default function Locations() {
     );
 
   const done = (locs ?? []).filter((l) => l.completed).length;
+
+  const exportLocationsCsv = () => {
+    if (!locs || !locs.length) return;
+    const headers = ['Zone', 'Shelf', 'Completed', 'Records Count'];
+    const rows = locs.map((l) => [
+      l.zone,
+      l.shelf || '(Zone)',
+      l.completed ? 'Yes' : 'No',
+      counts?.get(l.id) ?? 0,
+    ]);
+    const csv = buildCsvString(headers, rows, ';', true);
+    triggerCsvDownload(`SMART_INVENTORY_LOCATIONS_${formatDateYmd()}.csv`, csv);
+    toast(settings.lang === 'ar' ? 'تم تصدير المواقع CSV ✓' : 'Emplacements exportés en CSV ✓');
+  };
 
   const addZone = async () => {
     if (!zoneName.trim()) return;
@@ -77,9 +92,15 @@ export default function Locations() {
         <Card className="space-y-3">
           <div className="flex items-center justify-between text-sm text-white/60">
             <span>{t('stat.locations')}</span>
-            <b className="text-white">
-              {done}/{locs?.length ?? 0}
-            </b>
+            <div className="flex items-center gap-2">
+              <b className="text-white">
+                {done}/{locs?.length ?? 0}
+              </b>
+              <Btn onClick={exportLocationsCsv} disabled={!locs?.length} className="!min-h-7 !px-2 text-xs">
+                <Icon name="download" className="h-3 w-3" />
+                CSV
+              </Btn>
+            </div>
           </div>
           <div className="flex gap-2">
             <Input value={zoneName} onChange={(e) => setZoneName(e.target.value)} placeholder={t('loc.zonePlaceholder')} onKeyDown={(e) => e.key === 'Enter' && addZone()} />

@@ -15,6 +15,12 @@ import ImportPage from './pages/Import';
 import Backup from './pages/Backup';
 import Settings from './pages/Settings';
 import More from './pages/More';
+import BarcodeLabels from './pages/BarcodeLabels';
+import CsvManagement from './pages/CsvManagement';
+import StockOutDashboard from './pages/StockOutDashboard';
+import StockOutForm from './pages/StockOutForm';
+import StockOutDetail from './pages/StockOutDetail';
+import StockOutHistory from './pages/StockOutHistory';
 
 export default function App() {
   const { path } = useRoute();
@@ -24,6 +30,12 @@ export default function App() {
   switch (seg[0]) {
     case undefined:
       return <Home />;
+    case 'stock-out':
+      if (seg[1] === 'new') return <StockOutForm key="new" />;
+      if (seg[1] === 'edit') return <StockOutForm key={id} id={id} />;
+      if (seg[1] === 'history') return <StockOutHistory />;
+      if (seg[1]) return <StockOutDetail key={seg[1]} id={seg[1]} />;
+      return <StockOutDashboard />;
     case 'sessions':
       return <SessionsPage />;
     case 'session':
@@ -45,6 +57,10 @@ export default function App() {
       return <ProductDetail key={id} id={id} />;
     case 'products':
       return <Products />;
+    case 'labels':
+      return <BarcodeLabels />;
+    case 'csv':
+      return <CsvManagement />;
     case 'unknown':
       return <Unknown />;
     case 'history':
